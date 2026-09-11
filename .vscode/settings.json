@@ -1,0 +1,4 @@
+{
+  "eslint.useFlatConfig": true,
+  "js/ts.experimental.useTsgo": false
+}
