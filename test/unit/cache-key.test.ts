@@ -79,3 +79,40 @@ describe('createCacheKey', () => {
     expect(a.storageKey).toBe(b.storageKey)
   })
 })
+
+describe('createCacheKey priority flag', () => {
+  it('is false when the priority modifier is absent', () => {
+    expect(createCacheKey('/w_200,f_webp/image.jpg').priority).toBe(false)
+  })
+
+  it('is true when the priority modifier is present (comma-separated)', () => {
+    expect(createCacheKey('/w_200,priority,f_webp/image.jpg').priority).toBe(true)
+  })
+
+  it('is true when the priority modifier is present (&-separated, real-world @nuxt/image style)', () => {
+    expect(createCacheKey('/f_webp&priority/image.jpg').priority).toBe(true)
+  })
+
+  it('does not false-match a modifier that merely contains "priority" as a substring', () => {
+    expect(createCacheKey('/w_200,priorityHigh,f_webp/image.jpg').priority).toBe(false)
+  })
+
+  it('honors a custom priorityModifierKey', () => {
+    const result = createCacheKey('/f_webp&important/image.jpg', { priorityModifierKey: 'important' })
+    expect(result.priority).toBe(true)
+  })
+
+  it('hashes identically whether or not the priority flag is present', () => {
+    const withFlag = createCacheKey('/f_webp&priority/image.jpg')
+    const withoutFlag = createCacheKey('/f_webp/image.jpg')
+    expect(withFlag.storageKey).toBe(withoutFlag.storageKey)
+  })
+
+  it('hashes identically with the priority flag in any position among other modifiers', () => {
+    const base = createCacheKey('/w_200,f_webp/image.jpg')
+    const flagFirst = createCacheKey('/priority,w_200,f_webp/image.jpg')
+    const flagLast = createCacheKey('/w_200,f_webp,priority/image.jpg')
+    expect(flagFirst.storageKey).toBe(base.storageKey)
+    expect(flagLast.storageKey).toBe(base.storageKey)
+  })
+})

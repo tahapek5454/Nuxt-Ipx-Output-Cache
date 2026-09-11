@@ -18,15 +18,15 @@ const PURGE_TOKEN_HEADER = 'x-ipx-purge-token'
 // cache/dedup state alive for the lifetime of this server instance.
 let cache: CacheStorage | undefined
 let inflight: ReturnType<typeof createInflightMap<CachedData>> | undefined
-let ipxBaseURL: string | undefined
 let purgeToken: string | undefined
+let priorityModifierKey: string | undefined
 
 function ensureInitialized(event: H3Event) {
   if (cache) return
 
   const config = useRuntimeConfig(event).ipxOutputCache as ModuleOptions & { ipxBaseURL: string }
-  ipxBaseURL = config.ipxBaseURL
   purgeToken = config.purgeToken
+  priorityModifierKey = config.memoryCache?.priorityModifier
   cache = createCache(config.cacheDir!, { memory: config.memoryCache })
   inflight = createInflightMap<CachedData>()
 }
@@ -57,6 +57,7 @@ type EndArgs = Parameters<ServerResponse['end']>
 function captureAndCache(
   event: H3Event,
   storageKey: string,
+  priority: boolean,
 ): Promise<CachedData> {
   return new Promise((resolve, reject) => {
     const res = event.node.res
@@ -89,7 +90,7 @@ function captureAndCache(
       }
 
       setImmediate(() => {
-        cache!.set(storageKey, data).catch((err) => {
+        cache!.set(storageKey, data, { priority }).catch((err) => {
           console.error('[ipx-output-cache] Failed to cache:', storageKey, err)
         })
       })
@@ -106,14 +107,14 @@ export default defineEventHandler(async (event) => {
   // Nitro already scopes this handler to `ipxBaseURL` at registration time (route-based
   // middleware), and passes `event.path` with that mount prefix already stripped — so no
   // prefix check is needed (or possible) here.
-  const { storageKey, bypass } = createCacheKey(event.path)
+  const { storageKey, bypass, priority } = createCacheKey(event.path, { priorityModifierKey })
   if (bypass) return // no resolvable/negotiable format (e.g. `f_auto`) — never cache
 
   if (hasValidPurgeToken(event)) {
     await cache!.del(storageKey)
   }
   else {
-    const cached = await cache!.get(storageKey)
+    const cached = await cache!.get(storageKey, { priority })
     if (cached) {
       setHeaders(event, { ...cached.meta, 'cache-status': 'HIT' } as Record<string, string | number>)
       return sendStream(event, Readable.from(cached.buffer))
@@ -121,7 +122,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const isFollower = inflight!.has(storageKey)
-  const resultPromise = inflight!.once(storageKey, () => captureAndCache(event, storageKey))
+  const resultPromise = inflight!.once(storageKey, () => captureAndCache(event, storageKey, priority))
 
   if (!isFollower) {
     // Leader: fall through so the real IPX handler runs on this (now-patched) event.

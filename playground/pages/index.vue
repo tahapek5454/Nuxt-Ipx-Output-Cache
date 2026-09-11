@@ -60,6 +60,12 @@
             işlenir. Yanlış/eksik token varsa istek normal şekilde cache'ten (HIT ise) servis edilir.
         </p>
         <PurgeButton :path="formatExamplePath" />
+
+        <h2>9. modifiers prop (Module Modifier Priority)</h2>
+        <NuxtImg src="/tiger.jpg" :modifiers="{ priority: true }" width="200"
+            alt="tiger image with raw modifiers" />
+
+        <hr>
     </div>
 </template>
 

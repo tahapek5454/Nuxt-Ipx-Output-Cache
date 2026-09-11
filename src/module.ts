@@ -1,4 +1,4 @@
-import { defineNuxtModule, createResolver, hasNuxtModule, useLogger } from '@nuxt/kit'
+import { defineNuxtModule, createResolver, hasNuxtModule, useLogger, addTypeTemplate } from '@nuxt/kit'
 import fs from 'node:fs'
 
 // Minimal shape of `@nuxt/image`'s config we depend on (it's an optional peer,
@@ -17,6 +17,13 @@ export interface ModuleOptions {
     enabled?: boolean
     /** Max number of cached responses kept in memory (LRU eviction). Default 100. */
     maxItems?: number
+    /**
+     * When true, only requests carrying the `priorityModifier` flag are eligible for L1 —
+     * everything else is served from disk only. Default false (cache everything).
+     */
+    priorityOnly?: boolean
+    /** IPX modifier key that flags a request as high-priority, e.g. `:modifiers="{ priority: true }"`. Default 'priority'. */
+    priorityModifier?: string
   }
   /**
    * Secret required (via the `x-ipx-purge-token` request header) to force-purge a
@@ -38,6 +45,8 @@ export default defineNuxtModule<ModuleOptions>({
     memoryCache: {
       enabled: true,
       maxItems: 100,
+      priorityOnly: false,
+      priorityModifier: 'priority',
     },
   },
   async setup(opts, nuxt) {
@@ -83,6 +92,8 @@ export default defineNuxtModule<ModuleOptions>({
       logger.info('No purgeToken configured — manual cache purging via the x-ipx-purge-token header is disabled.')
     }
 
+    const priorityModifierKey = opts.memoryCache?.priorityModifier || 'priority'
+
     nuxt.options.runtimeConfig.ipxOutputCache = {
       cacheDir: opts.cacheDir,
       enableCache: opts.enableCache ?? true,
@@ -90,10 +101,28 @@ export default defineNuxtModule<ModuleOptions>({
       memoryCache: {
         enabled: opts.memoryCache?.enabled ?? true,
         maxItems: opts.memoryCache?.maxItems ?? 100,
+        priorityOnly: opts.memoryCache?.priorityOnly ?? false,
+        priorityModifier: priorityModifierKey,
       },
       purgeToken: opts.purgeToken ?? '',
       ipxBaseURL: ipxBaseURL,
     }
+
+    // Augments @nuxt/image's own `IPXModifiers` type so `:modifiers="{ [priorityModifierKey]: true }"`
+    // type-checks in userland — IPX itself ignores this key (see ipx-cache.ts), it only exists for us.
+    addTypeTemplate({
+      filename: 'types/ipx-output-cache-priority-modifier.d.ts',
+      getContents: () => [
+        'export {}',
+        '',
+        'declare module \'@nuxt/image/runtime/providers/ipx\' {',
+        '  interface IPXModifiers {',
+        `    ${JSON.stringify(priorityModifierKey)}?: true | 'true'`,
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    })
 
     // Registered as a plain addServerHandler this would run AFTER @nuxt/image's own
     // IPX handler (its setup already ran, since hasNuxtModule() above requires it).

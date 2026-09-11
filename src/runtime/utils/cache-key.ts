@@ -32,17 +32,37 @@ export interface CacheKeyResult {
    * otherwise leak one client's negotiated format to every other client.
    */
   bypass: boolean
+  /** True when the request carries the priority modifier flag (see `CreateCacheKeyOptions`). */
+  priority: boolean
+}
+
+export interface CreateCacheKeyOptions {
+  /** IPX modifier key that flags a request as high-priority for the in-memory cache. Default `'priority'`. */
+  priorityModifierKey?: string
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-export function createCacheKey(path: string): CacheKeyResult {
+export function createCacheKey(path: string, options: CreateCacheKeyOptions = {}): CacheKeyResult {
+  const priorityKey = escapeRegExp(options.priorityModifierKey || 'priority')
+
+  // Flag modifiers (e.g. `f_webp&priority`) appear bare, with no value — bounded so
+  // e.g. `priorityHigh` never false-matches.
+  const priority = new RegExp(`(?:^|[,&/])${priorityKey}(?=[,&/]|$)`).test(path)
+
   const format = extractFormat(path)
   const bypass = format === '' || isAutoFormat(format)
 
-  const normalized = path
+  // Strip the flag (plus one adjacent separator, or both `/` if it's alone in its
+  // segment) before hashing, so the same image hashes identically with or without it.
+  const withoutPriority = path.replace(
+    new RegExp(`${priorityKey}[,&]|[,&]${priorityKey}(?=[,&/]|$)|(?<=/)${priorityKey}(?=/)`, 'g'),
+    '',
+  )
+
+  const normalized = withoutPriority
     .replace(/,/g, '')
     .replace(/https?:\/\//g, '')
     .replace(/&/g, '-')
@@ -53,5 +73,5 @@ export function createCacheKey(path: string): CacheKeyResult {
   const hash = createHash('sha256').update(normalized).digest('hex')
   const storageKey = `${format || 'raw'}:${hash}`
 
-  return { storageKey, format, bypass }
+  return { storageKey, format, bypass, priority }
 }

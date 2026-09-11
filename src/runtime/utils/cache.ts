@@ -9,9 +9,14 @@ export interface CachedData {
   buffer: Buffer
 }
 
+export interface CacheAccessOptions {
+  /** Whether this request is flagged as high-priority (see `cache-key.ts`). */
+  priority?: boolean
+}
+
 export interface CacheStorage {
-  set: (key: string, val: CachedData) => Promise<void>
-  get: (key: string) => Promise<CachedData | undefined>
+  set: (key: string, val: CachedData, opts?: CacheAccessOptions) => Promise<void>
+  get: (key: string, opts?: CacheAccessOptions) => Promise<CachedData | undefined>
   del: (key: string) => Promise<void>
   clear: () => void
 }
@@ -20,6 +25,8 @@ export interface CreateCacheOptions {
   memory?: {
     enabled?: boolean
     maxItems?: number
+    /** When true, only priority-flagged requests are written into/promoted to L1. */
+    priorityOnly?: boolean
   }
 }
 
@@ -32,12 +39,15 @@ export interface CreateCacheOptions {
 export function createCache(cacheDir: string, options: CreateCacheOptions = {}): CacheStorage {
   const store = createStorage<string>({ driver: fsDriver({ base: cacheDir }) })
   const memoryEnabled = options.memory?.enabled ?? true
+  const priorityOnly = options.memory?.priorityOnly ?? false
   const memory = memoryEnabled
     ? createMemoryCache<CachedData>({ maxItems: options.memory?.maxItems })
     : undefined
 
+  const admitsMemory = (opts?: CacheAccessOptions) => !priorityOnly || opts?.priority === true
+
   return {
-    async get(key) {
+    async get(key, opts) {
       const fromMemory = memory?.get(key)
       if (fromMemory) return fromMemory
 
@@ -46,12 +56,12 @@ export function createCache(cacheDir: string, options: CreateCacheOptions = {}):
 
       const meta = (await store.getItem(`${key}.json`)) as OutgoingHttpHeaders | null
       const data: CachedData = { meta: meta ?? {}, buffer: raw as Buffer }
-      memory?.set(key, data)
+      if (admitsMemory(opts)) memory?.set(key, data)
       return data
     },
 
-    async set(key, val) {
-      memory?.set(key, val)
+    async set(key, val, opts) {
+      if (admitsMemory(opts)) memory?.set(key, val)
       await Promise.all([
         store.setItemRaw(key, val.buffer),
         store.setItem(`${key}.json`, JSON.stringify(val.meta)),
