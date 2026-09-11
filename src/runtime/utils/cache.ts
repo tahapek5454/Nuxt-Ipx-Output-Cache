@@ -1,45 +1,73 @@
-import type { OutgoingHttpHeaders } from 'http';
+import type { OutgoingHttpHeaders } from 'node:http'
 
-import { createStorage } from 'unstorage';
-import fsDriver from 'unstorage/drivers/fs';
+import { createStorage } from 'unstorage'
+import fsDriver from 'unstorage/drivers/fs'
+import { createMemoryCache } from './memory-cache'
 
-export function createCache(cacheDir: string) {
-  const store = createStorage<string>({ driver: fsDriver({ base: cacheDir }) });
-  return <CacheStorage>{
-    async get(path) {
-      const raw = await store.getItemRaw(path);
-      if (!raw) return;
+export interface CachedData {
+  meta: OutgoingHttpHeaders
+  buffer: Buffer
+}
 
-      const meta = await store.getItem(`${path}.json`);
-      return { meta, buffer: raw };
+export interface CacheStorage {
+  set: (key: string, val: CachedData) => Promise<void>
+  get: (key: string) => Promise<CachedData | undefined>
+  del: (key: string) => Promise<void>
+  clear: () => void
+}
+
+export interface CreateCacheOptions {
+  memory?: {
+    enabled?: boolean
+    maxItems?: number
+  }
+}
+
+/**
+ * Two-tier cache: an in-memory LRU (L1, fast, per-process) in front of a
+ * persistent disk store (L2, unstorage fs driver, survives restarts).
+ * `key` is expected to already be a hashed, filesystem-safe cache key
+ * (see cache-key.ts) — this module does no further sanitization.
+ */
+export function createCache(cacheDir: string, options: CreateCacheOptions = {}): CacheStorage {
+  const store = createStorage<string>({ driver: fsDriver({ base: cacheDir }) })
+  const memoryEnabled = options.memory?.enabled ?? true
+  const memory = memoryEnabled
+    ? createMemoryCache<CachedData>({ maxItems: options.memory?.maxItems })
+    : undefined
+
+  return {
+    async get(key) {
+      const fromMemory = memory?.get(key)
+      if (fromMemory) return fromMemory
+
+      const raw = await store.getItemRaw(key)
+      if (!raw) return undefined
+
+      const meta = (await store.getItem(`${key}.json`)) as OutgoingHttpHeaders | null
+      const data: CachedData = { meta: meta ?? {}, buffer: raw as Buffer }
+      memory?.set(key, data)
+      return data
     },
 
-    async set(path, v) {
+    async set(key, val) {
+      memory?.set(key, val)
       await Promise.all([
-        store.setItemRaw(path, v.buffer),
-        store.setItem(`${path}.json`, JSON.stringify(v.meta)),
-      ]).catch(console.error);
+        store.setItemRaw(key, val.buffer),
+        store.setItem(`${key}.json`, JSON.stringify(val.meta)),
+      ]).catch((err) => {
+        console.error('[ipx-output-cache] Failed to write disk cache:', key, err)
+      })
     },
 
-    async del(path) {
-      const promises = [store.removeItem(path), store.removeItem(`${path}.json`)];
-      await Promise.all(promises).catch(() => void 0);
+    async del(key) {
+      memory?.del(key)
+      await Promise.all([store.removeItem(key), store.removeItem(`${key}.json`)]).catch(() => void 0)
     },
 
     clear() {
-      store.clear();
+      memory?.clear()
+      store.clear()
     },
-  };
-}
-
-interface CachedData {
-  meta: OutgoingHttpHeaders;
-  buffer: Buffer;
-}
-
-interface CacheStorage {
-  set: (path: string, val: CachedData, ttl?: number) => Promise<void>;
-  get: (path: string) => Promise<CachedData | undefined>;
-  del: (path: string) => Promise<void>;
-  clear: () => void;
+  }
 }

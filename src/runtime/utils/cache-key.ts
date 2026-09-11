@@ -1,0 +1,57 @@
+import { createHash } from 'node:crypto'
+
+/**
+ * Extract the IPX output format from a request path: an explicit `f_x`/`format_x`
+ * modifier wins, otherwise falls back to the source file's extension.
+ */
+export function extractFormat(url: string): string {
+  const formatMatch = url.match(/f(?:ormat)?[_-](\w+)/)
+  if (formatMatch?.[1]) {
+    return formatMatch[1]
+  }
+
+  const extMatch = url.match(/\.(\w+)(?:[?&#]|$)/)
+  if (extMatch?.[1]) {
+    return extMatch[1]
+  }
+
+  return ''
+}
+
+export function isAutoFormat(format: string): boolean {
+  return format.toLowerCase() === 'auto'
+}
+
+export interface CacheKeyResult {
+  /** Filesystem/unstorage-safe key: `${format}:${sha256}`, never contains the raw path. */
+  storageKey: string
+  format: string
+  /**
+   * True when this request must never be cached — e.g. no resolvable format, or
+   * `f_auto` whose output depends on the client's `Accept` header and would
+   * otherwise leak one client's negotiated format to every other client.
+   */
+  bypass: boolean
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function createCacheKey(path: string): CacheKeyResult {
+  const format = extractFormat(path)
+  const bypass = format === '' || isAutoFormat(format)
+
+  const normalized = path
+    .replace(/,/g, '')
+    .replace(/https?:\/\//g, '')
+    .replace(/&/g, '-')
+
+  // Hashing (instead of using `normalized` directly as a storage key) prevents path
+  // traversal / invalid filesystem characters / key collisions from reaching the
+  // disk driver, regardless of what a source URL or modifier string contains.
+  const hash = createHash('sha256').update(normalized).digest('hex')
+  const storageKey = `${format || 'raw'}:${hash}`
+
+  return { storageKey, format, bypass }
+}

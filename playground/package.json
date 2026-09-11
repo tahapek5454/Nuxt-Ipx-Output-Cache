@@ -8,7 +8,7 @@
     "generate": "nuxt generate"
   },
   "dependencies": {
-    "ipx-output-cache": "latest",
+    "ipx-output-cache": "file:..",
     "@nuxt/image": "^2.0.0",
     "nuxt": "^4.3.0"
   }
