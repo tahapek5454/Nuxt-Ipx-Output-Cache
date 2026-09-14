@@ -2,7 +2,8 @@
 node_modules
 
 .github
-
+.cache
+.vscode
 # Logs
 *.log*
 
