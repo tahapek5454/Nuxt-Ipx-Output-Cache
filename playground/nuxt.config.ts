@@ -27,6 +27,7 @@ export default defineNuxtConfig({
     memoryCache: {
       enabled: true,
       maxItems: 100,
+      priorityOnly: true
     },
     // Demo only — send `x-ipx-purge-token: playground-secret` to force a purge+reprocess.
     purgeToken: 'playground-secret',

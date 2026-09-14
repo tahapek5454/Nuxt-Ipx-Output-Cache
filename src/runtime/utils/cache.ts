@@ -49,7 +49,9 @@ export function createCache(cacheDir: string, options: CreateCacheOptions = {}):
   return {
     async get(key, opts) {
       const fromMemory = memory?.get(key)
-      if (fromMemory) return fromMemory
+      if (fromMemory){
+        return fromMemory
+      }
 
       const raw = await store.getItemRaw(key)
       if (!raw) return undefined

@@ -46,9 +46,10 @@ function escapeRegExp(value: string): string {
 }
 
 export function createCacheKey(path: string, options: CreateCacheKeyOptions = {}): CacheKeyResult {
-  const priorityKey = escapeRegExp(options.priorityModifierKey || 'priority')
+  const priorityKey = `${escapeRegExp(options.priorityModifierKey || 'priority')}_true`
+  const priorityFalseKey = `${escapeRegExp(options.priorityModifierKey || 'priority')}_false`
 
-  // Flag modifiers (e.g. `f_webp&priority`) appear bare, with no value — bounded so
+  // Flag modifiers (e.g. `f_webp&priority_true`) appear bare, with no value — bounded so
   // e.g. `priorityHigh` never false-matches.
   const priority = new RegExp(`(?:^|[,&/])${priorityKey}(?=[,&/]|$)`).test(path)
 
@@ -57,8 +58,12 @@ export function createCacheKey(path: string, options: CreateCacheKeyOptions = {}
 
   // Strip the flag (plus one adjacent separator, or both `/` if it's alone in its
   // segment) before hashing, so the same image hashes identically with or without it.
-  const withoutPriority = path.replace(
+  let withoutPriority = path.replace(
     new RegExp(`${priorityKey}[,&]|[,&]${priorityKey}(?=[,&/]|$)|(?<=/)${priorityKey}(?=/)`, 'g'),
+    '',
+  )
+  withoutPriority = withoutPriority.replace(
+    new RegExp(`${priorityFalseKey}[,&]|[,&]${priorityFalseKey}(?=[,&/]|$)|(?<=/)${priorityFalseKey}(?=/)`, 'g'),
     '',
   )
 

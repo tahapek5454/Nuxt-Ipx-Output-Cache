@@ -117,7 +117,7 @@ export default defineNuxtModule<ModuleOptions>({
         '',
         'declare module \'@nuxt/image/runtime/providers/ipx\' {',
         '  interface IPXModifiers {',
-        `    ${JSON.stringify(priorityModifierKey)}?: true | 'true'`,
+        `    ${JSON.stringify(priorityModifierKey)}?: true | 'true' | false | 'false'`,
         '  }',
         '}',
         '',
