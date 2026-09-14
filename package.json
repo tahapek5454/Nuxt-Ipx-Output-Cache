@@ -1,6 +1,6 @@
 {
   "name": "nuxt-ipx-output-cache",
-  "version": "2.1.1",
+  "version": "1.0.0",
   "description": "IPX Output Cache Module for Nuxt",
   "repository": "tahapek5454/nuxt-ipx-output-cache",
   "license": "MIT",
