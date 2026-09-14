@@ -66,6 +66,20 @@ describe('ipx output cache', async () => {
     expect(second.headers.get('cache-status')).not.toBe('HIT')
   })
 
+  it('does not let HEAD requests read or populate GET cache entries', async () => {
+    const path = '/_ipx/w_72,f_webp/tiger.jpg'
+
+    const head = await fetch(path, { method: 'HEAD' })
+    expect(head.headers.get('cache-status')).not.toBe('HIT')
+
+    const firstGet = await fetch(path)
+    expect(firstGet.status).toBe(200)
+    expect(firstGet.headers.get('cache-status')).not.toBe('HIT')
+
+    const secondGet = await fetch(path)
+    expect(secondGet.headers.get('cache-status')).toBe('HIT')
+  })
+
   it('ignores an invalid purge token and still serves from cache', async () => {
     const path = '/_ipx/w_16,f_webp/tiger.jpg'
     await fetch(path) // populate cache

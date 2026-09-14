@@ -63,6 +63,8 @@ export default defineNuxtConfig({
     enableCache: true,
     // Wipe cacheDir once at server start (useful in dev; usually false in production).
     clearCacheOnStart: true,
+    // Responses larger than this are served normally but not retained (default: 50 MiB).
+    maxResponseSize: 50 * 1024 * 1024,
     memoryCache: {
       // In-memory (L1) LRU layer in front of the disk cache.
       enabled: true,
@@ -115,6 +117,12 @@ request-handling stack regardless of module registration order):
 
 ## Production notes
 
+- `cacheDir` is resolved under the Nuxt project root and must be a strict subdirectory. This keeps
+  startup cache clearing from targeting the project root or paths outside it.
+- The response-size limit is per cached image. The disk tier does not enforce a total quota; use a
+  dedicated volume/quota and normal disk monitoring for public deployments with unbounded variants.
+- Cache reads/writes only apply to `GET`. `f_auto` remains intentionally uncached because its bytes
+  vary with `Accept`; mitigate abusive uncached image traffic at your CDN/reverse proxy if needed.
 - Each server process/replica maintains its own independent cache (memory + disk). There is no
   shared/cross-instance cache — this is a deliberate choice for simplicity and to avoid a network
   round-trip (e.g. Redis) on every image request. If you run multiple replicas behind a load

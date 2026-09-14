@@ -1,5 +1,6 @@
 import { defineNuxtModule, createResolver, hasNuxtModule, useLogger, addTypeTemplate } from '@nuxt/kit'
-import fs from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { resolveCacheDir } from './runtime/utils/security'
 
 // Minimal shape of `@nuxt/image`'s config we depend on (it's an optional peer,
 // so we don't import its types directly).
@@ -12,6 +13,8 @@ export interface ModuleOptions {
   cacheDir?: string
   enableCache?: boolean
   clearCacheOnStart?: boolean
+  /** Largest processed response retained in cache, in bytes. Default 50 MiB. */
+  maxResponseSize?: number
   /** In-memory L1 cache in front of the disk cache. Enabled by default. */
   memoryCache?: {
     enabled?: boolean
@@ -42,6 +45,7 @@ export default defineNuxtModule<ModuleOptions>({
     cacheDir: '.cache/ipx',
     enableCache: true,
     clearCacheOnStart: true,
+    maxResponseSize: 50 * 1024 * 1024,
     memoryCache: {
       enabled: true,
       maxItems: 100,
@@ -83,8 +87,10 @@ export default defineNuxtModule<ModuleOptions>({
       logger.info(`No cacheDir specified. Using default: ${opts.cacheDir}`)
     }
 
-    if (opts.clearCacheOnStart && fs.existsSync(opts.cacheDir)) {
-      fs.rmSync(opts.cacheDir, { recursive: true, force: true })
+    opts.cacheDir = resolveCacheDir(opts.cacheDir, nuxt.options.rootDir)
+
+    if (opts.clearCacheOnStart) {
+      await rm(opts.cacheDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
       logger.info(`IPX cache cleared: ${opts.cacheDir}`)
     }
 
@@ -93,11 +99,20 @@ export default defineNuxtModule<ModuleOptions>({
     }
 
     const priorityModifierKey = opts.memoryCache?.priorityModifier || 'priority'
+    if (!/^[\w-]{1,64}$/.test(priorityModifierKey)) {
+      throw new Error('[ipx-output-cache] memoryCache.priorityModifier must contain 1-64 letters, numbers, underscores, or hyphens.')
+    }
+
+    const maxResponseSize = opts.maxResponseSize ?? 50 * 1024 * 1024
+    if (!Number.isSafeInteger(maxResponseSize) || maxResponseSize <= 0) {
+      throw new Error('[ipx-output-cache] maxResponseSize must be a positive integer number of bytes.')
+    }
 
     nuxt.options.runtimeConfig.ipxOutputCache = {
       cacheDir: opts.cacheDir,
       enableCache: opts.enableCache ?? true,
       clearCacheOnStart: opts.clearCacheOnStart ?? true,
+      maxResponseSize,
       memoryCache: {
         enabled: opts.memoryCache?.enabled ?? true,
         maxItems: opts.memoryCache?.maxItems ?? 100,
